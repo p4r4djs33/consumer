@@ -9,8 +9,7 @@ import org.slf4j.LoggerFactory;
 import java.time.Duration;
 import java.util.*;
 
-public class CommitKafkaNewPosition {
-
+public class CommitKafkaTimestamp {
     static String BOOTSTRAP_SERVERS = "192.168.1.74:9092";
     static String TOPIC = "topic-6";
     static String CONSUMER_GROUP_ID = "group-6";
@@ -22,7 +21,7 @@ public class CommitKafkaNewPosition {
 
     private static Map<TopicPartition, OffsetAndMetadata> currentOffsets;
 
-    private static Long toOffset;
+
 
     public static void main(String[] args) {
         final Logger logger = LoggerFactory.getLogger(KafkaConsumerConfig.class);
@@ -47,20 +46,43 @@ public class CommitKafkaNewPosition {
         topicPartitions.add(topicPartition);
         consumer.assign(topicPartitions);
         currentOffsets = new HashMap<>();
-        currentOffsets.put(topicPartition, new OffsetAndMetadata(15));
-        consumer.commitSync(currentOffsets);
-        toOffset = 20L;
+        consumer.seek(topicPartition, 0L);
+
+//=====================
+        java.sql.Timestamp ts = java.sql.Timestamp.valueOf("2022-07-12 09:20:47.934");
+
+        Long tsLong = ts.getTime();
         boolean run = true;
 
+        while (run) {
             records = consumer.poll(Duration.ofMillis(5000));
             for (ConsumerRecord consumerRecord : records) {
-                if (consumerRecord.offset() <= toOffset) {
-                    logger.info("Receiver new record: \n" + "Key: " + consumerRecord.key() + ", Value: " + consumerRecord.value() + ", Topic: " + consumerRecord.topic() + ", Partition: " + consumerRecord.partition() + ", Offset: " + consumerRecord.offset());
+                logger.info("Receiver new record in run 1: \n" + "Key: " + consumerRecord.key() + ", Value: " + consumerRecord.value() + ", Topic: " + consumerRecord.topic() + ", Partition: " + consumerRecord.partition() + ", Offset: " + consumerRecord.offset());
+                if (consumerRecord.timestamp() > tsLong) {
+                    currentOffsets.put(topicPartition, new OffsetAndMetadata(consumerRecord.offset()));
+                    consumer.commitSync(currentOffsets);
+                    run = false;
+                    break;
                 }
+            }
+        }
+
+        consumer = new KafkaConsumer<String, String>(properties);
+        consumer.assign(topicPartitions);
+
+        boolean run2 = true;
+        Long endOffset =  consumer.endOffsets(topicPartitions).get(topicPartition);
+
+        while (run2) {
+            ConsumerRecords<String, String> records2 = consumer.poll(Duration.ofMillis(5000));
+            for (ConsumerRecord consumerRecord : records2) {
+                logger.info("Receiver new record in run 2: \n" + "Key: " + consumerRecord.key() + ", Value: " + consumerRecord.value() + ", Topic: " + consumerRecord.topic() + ", Partition: " + consumerRecord.partition() + ", Offset: " + consumerRecord.offset());
+
                 topicPartition = new TopicPartition(consumerRecord.topic(), consumerRecord.partition());
                 currentOffsets.put(topicPartition, new OffsetAndMetadata(consumerRecord.offset() + 1));
                 consumer.commitSync(currentOffsets);
             }
+        }
 
 
 //==========================================================================
@@ -92,7 +114,4 @@ public class CommitKafkaNewPosition {
             }
         }*/
     }
-
 }
-
-
